@@ -21,14 +21,33 @@ static const uint32_t SPI1_IOF_MASK =
 
 static const uint32_t BLUE_LED_MASK = (0x1 << BLUE_LED_OFFSET);
 
+void set_SPI_frame_length(uint8_t length)
+{
+    /* Set frame format register
+     * Bit 0-1: proto - SPI protocol used. SPI_PROTO_S = single channel
+     * Bit 2: endian - Endianess of frame. SPI_ENDIAN_MSB = transmit MSB first
+     * Bit 3: dir - Allows RX during dual and quad modes
+     * Bit 16-19: len - length of frame
+     */
+    SPI_REG(SPI_REG_FMT) = 0;
+    SPI_REG(SPI_REG_FMT) =
+        SPI_FMT_PROTO(SPI_PROTO_S)     |
+        SPI_FMT_ENDIAN(SPI_ENDIAN_MSB) |
+        SPI_FMT_DIR(SPI_DIR_TX)        |
+        SPI_FMT_LEN(length); // 8 bit long packets
+}
+
 void write_SPI()
 {
     /* Toggle an LED for visual feedback */
     GPIO_REG(GPIO_OUTPUT_VAL) ^=  BLUE_LED_MASK;
-    /* Flush transmit buffer */
+    set_SPI_frame_length(4);
+    SPI_REG(SPI_REG_TXFIFO) = 0xF0;
     while (SPI_REG(SPI_REG_TXFIFO) & SPI_TXFIFO_FULL);
-    /* Send a recognisable bit-pattern */
+
+    set_SPI_frame_length(8);
     SPI_REG(SPI_REG_TXFIFO) = 0xAA;
+    while (SPI_REG(SPI_REG_TXFIFO) & SPI_TXFIFO_FULL);
 }
 
 void handle_m_time_interrupt()
@@ -72,18 +91,10 @@ void init_SPI()
      */
     SPI_REG(SPI_REG_SCKMODE) = 0x0;
 
-    /* Set frame format register
-     * Bit 0-1: proto - SPI protocol used. SPI_PROTO_S = single channel
-     * Bit 2: endian - Endianess of frame. SPI_ENDIAN_MSB = transmit MSB first
-     * Bit 3: dir - Allows RX during dual and quad modes
-     * Bit 16-19: len - length of frame
-     */
-    SPI_REG(SPI_REG_FMT) = 0;
-    SPI_REG(SPI_REG_FMT) =
-        SPI_FMT_PROTO(SPI_PROTO_S)     |
-        SPI_FMT_ENDIAN(SPI_ENDIAN_MSB) |
-        SPI_FMT_DIR(SPI_DIR_TX)        |
-        SPI_FMT_LEN(8); // 8 bit long packets
+    set_SPI_frame_length(8);
+
+    /* Set the delay between CS assertions to zero on consecutive frames */
+    SPI_REG(SPI_REG_DINTERCS) = 0x00;
 
     /* Set CS mode auto
      * SPI_CSMODE_AUTO - Assert/de-assert CS at beginning and end of each frame
